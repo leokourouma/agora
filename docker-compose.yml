@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: agora_db
+    restart: always
+    environment:
+      POSTGRES_DB: agora
+      POSTGRES_USER: leokd
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: agora_api
+    restart: always
+    ports:
+      - "8888:80"
+    volumes:
+      - .:/app
+    environment:
+      DATABASE_URL: "pgsql:host=db;port=5432;dbname=agora;user=leokd;password=password"
+      SERVER_NAME: ":80"
+      FRANKENPHP_CONFIG: "root /app/public"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: agora_front
+    restart: always
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8888
+
+volumes:
+  db_data:
