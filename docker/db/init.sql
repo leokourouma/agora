@@ -1,45 +1,51 @@
-CREATE EXTENSION IF NOT EXISTS "ltree";
-
--- Table des profils (Le "Mur")
-CREATE TABLE profiles (
+-- 1. Table des comptes (Privé)
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 2. Table des Profils (Public)
+CREATE TABLE IF NOT EXISTS profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     username TEXT UNIQUE NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
     bio TEXT,
     avatar_url TEXT,
+    banner_url TEXT,
+    birth_date DATE,
+    visibility_settings JSONB DEFAULT '{"show_name": true, "show_age": false}',
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Table des Posts & Stories
-CREATE TABLE posts (
+-- 3. Table des Albums
+CREATE TABLE IF NOT EXISTS albums (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    author_id UUID REFERENCES profiles(id),
-    content TEXT,
-    is_story BOOLEAN DEFAULT FALSE,
-    upvotes INTEGER DEFAULT 0,
-    downvotes INTEGER DEFAULT 0,
-    views INTEGER DEFAULT 0,
-    controversy_score FLOAT DEFAULT 0,
+    profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    is_default BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Table des Commentaires avec LTREE
-CREATE TABLE comments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
-    author_id UUID REFERENCES profiles(id),
-    content TEXT NOT NULL,
-    path ltree, -- C'est ici que la magie de l'arborescence opère
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Trigger pour calculer la controverse automatiquement
-CREATE OR REPLACE FUNCTION update_controversy() RETURNS TRIGGER AS $$
+-- 4. TRIGGER : Automatisation à l'inscription
+CREATE OR REPLACE FUNCTION initialize_new_user() RETURNS TRIGGER AS $$
+DECLARE
+    new_profile_id UUID;
 BEGIN
-    NEW.controversy_score := (NEW.upvotes + NEW.downvotes) / (ABS(NEW.upvotes - NEW.downvotes) + 1.1);
+    -- Crée le profil lié à l'USER
+    INSERT INTO profiles (user_id, username)
+    VALUES (NEW.id, 'user_' || substr(NEW.id::text, 1, 8))
+    RETURNING id INTO new_profile_id;
+
+    -- Crée l'album par défaut lié au PROFIL
+    INSERT INTO albums (profile_id, name, is_default)
+    VALUES (new_profile_id, 'Général', TRUE);
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_posts_controversy 
-BEFORE UPDATE ON posts 
-FOR EACH ROW EXECUTE FUNCTION update_controversy();
+CREATE TRIGGER trg_init_user AFTER INSERT ON users FOR EACH ROW EXECUTE FUNCTION initialize_new_user();

@@ -1,31 +1,19 @@
 <?php
-$dsn = getenv('DATABASE_URL');
-$pdo = new PDO($dsn);
+// On récupère l'URL configurée dans le docker-compose
+$dsn = getenv('DATABASE_URL'); 
+try {
+    $pdo = new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 
-// 1. Créer quelques profils
-$usernames = ['leokd', 'agora_user', 'tech_expert', 'europe_dev', 'reddit_fan'];
-$profileIds = [];
-
-foreach ($usernames as $name) {
-    $stmt = $pdo->prepare("INSERT INTO profiles (username) VALUES (?) ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username RETURNING id");
-    $stmt->execute([$name]);
-    $profileIds[] = $stmt->fetchColumn();
-}
-
-// 2. Générer des posts avec des votes variés pour tester les tris
-echo "Génération de posts...\n";
-for ($i = 0; $i < 50; $i++) {
-    $authorId = $profileIds[array_rand($profileIds)];
-    $up = rand(0, 500);
-    $down = rand(0, 500);
-    $isStory = (rand(0, 10) > 8) ? 'true' : 'false';
+    // Insertion d'un profil de test
+    $stmt = $pdo->prepare("
+        INSERT INTO profiles (username, first_name, last_name, bio) 
+        VALUES (?, ?, ?, ?) 
+        ON CONFLICT (username) DO UPDATE SET bio = EXCLUDED.bio
+        RETURNING id
+    ");
+    $stmt->execute(['leokd', 'Leo', 'Kourouma', 'Bâtisseur de l\'Agora']);
     
-    $stmt = $pdo->prepare("INSERT INTO posts (author_id, content, upvotes, downvotes, is_story, created_at) VALUES (?, ?, ?, ?, $isStory, NOW() - INTERVAL '$i hours')");
-    $stmt->execute([
-        $authorId, 
-        "Ceci est le message Agora numéro $i. Souveraineté numérique !",
-        $up,
-        $down
-    ]);
+    echo "✅ Base de données initialisée et profil créé !";
+} catch (Exception $e) {
+    echo "❌ Erreur de seed : " . $e->getMessage();
 }
-echo "✅ Seed terminé !";

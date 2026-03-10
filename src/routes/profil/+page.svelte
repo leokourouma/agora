@@ -1,55 +1,131 @@
 <script>
-    import PostCard from '$lib/components/PostCard.svelte';
-    import { Settings, Grid, Flame, Clock, Star } from 'lucide-svelte';
+    import ProfileHeader from '$lib/components/ProfileHeader.svelte';
+    import { UserPlus, LogIn, ShieldCheck, LogOut } from 'lucide-svelte';
+    import { onMount } from 'svelte';
+
+    // ÉTATS SVELTE 5
+    let user = $state(null);      // Contiendra les infos du profil si connecté
+    let loading = $state(true);   // Pour l'écran de chargement
+    let isLogin = $state(false);  // Par défaut, on affiche l'inscription
     
-    /** @type {import('./$types').PageData} */
-    export let data;
+    let email = $state('');
+    let password = $state('');
+    let error = $state('');
 
-    let currentFilter = 'recent';
-    let posts = data.posts;
+    // 1. AU CHARGEMENT : On regarde si on est déjà connecté
+    onMount(async () => {
+        const token = localStorage.getItem('agora_token');
+        if (token) {
+            await fetchProfile(token);
+        } else {
+            loading = false;
+        }
+    });
 
-    // Fonction pour changer de filtre sans recharger toute la page
-    async function changeFilter(filter) {
-        currentFilter = filter;
-        const res = await fetch(`http://localhost:8888/api.php?sort=${filter}`);
-        posts = await res.json();
+    // 2. RÉCUPÉRER LE PROFIL (via l'ID stocké)
+    async function fetchProfile(id) {
+        try {
+            const res = await fetch(`http://localhost:8888/profile.php?id=${id}`);
+            if (!res.ok) throw new Error();
+            user = await res.json();
+        } catch (e) {
+            // Si l'ID est vieux ou invalide, on déconnecte
+            logout();
+        } finally {
+            loading = false;
+        }
+    }
+
+    // 3. ACTIONS (Inscription ou Connexion)
+    async function handleAuth() {
+        error = '';
+        const endpoint = isLogin ? 'login.php' : 'register.php';
+        
+        try {
+            const res = await fetch(`http://localhost:8888/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await res.json();
+            
+            if (res.ok && data.token) {
+                // VICTOIRE : On enregistre l'ID dans la mémoire du navigateur
+                localStorage.setItem('agora_token', data.token);
+                // On charge le profil immédiatement
+                await fetchProfile(data.token);
+            } else {
+                error = data.error || "Erreur d'authentification";
+            }
+        } catch (e) {
+            error = "Serveur PHP injoignable (port 8888)";
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('agora_token');
+        user = null;
+        loading = false;
     }
 </script>
 
-<div class="max-w-2xl mx-auto pt-8">
-    <div class="flex items-center gap-8 px-4 mb-10">
-        <div class="w-24 h-24 rounded-full bg-indigo-600 p-1">
-            <div class="w-full h-full rounded-full bg-gray-200 border-4 border-white flex items-center justify-center font-bold text-xl text-indigo-600">
-                LK
+<div class="max-w-2xl mx-auto pt-8 px-4">
+    {#if loading}
+        <div class="text-center py-20 animate-pulse text-gray-500 font-bold uppercase tracking-widest">Initialisation...</div>
+    
+    {:else if user}
+        <ProfileHeader bind:user={user} />
+        
+        <div class="mt-8 flex justify-center">
+            <button onclick={logout} class="flex items-center gap-2 text-xs font-bold text-red-500 border border-red-200 px-6 py-2 rounded-full hover:bg-red-50 transition-all">
+                <LogOut size={14} /> SE DÉCONNECTER
+            </button>
+        </div>
+
+    {:else}
+        <div class="max-w-md mx-auto post-card-bg p-8 rounded-3xl border border-gray-100 dark:border-zinc-800 shadow-2xl">
+            <div class="text-center mb-10">
+                <div class="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 rotate-3 shadow-lg shadow-indigo-500/30">
+                    <ShieldCheck class="text-white" size={32} />
+                </div>
+                <h1 class="text-3xl font-black dark:text-white uppercase tracking-tighter">
+                    {isLogin ? 'Connexion' : 'Inscription'}
+                </h1>
+                <p class="text-gray-400 text-[10px] mt-2 uppercase tracking-[0.2em]">Agora v1.0</p>
             </div>
-        </div>
-        <div class="flex-1">
-            <h2 class="text-xl font-bold mb-2">leokd</h2>
-            <p class="text-sm text-gray-600">Bâtisseur de l'Agora • {posts.length} publications</p>
-        </div>
-    </div>
 
-    <div class="flex justify-around border-t border-b border-gray-200 py-2 mb-6 bg-white sticky top-0 z-10">
-        <button on:click={() => changeFilter('recent')} class="flex items-center gap-1 text-xs font-bold uppercase {currentFilter === 'recent' ? 'text-indigo-600' : 'text-gray-400'}">
-            <Clock size={16} /> Récent
-        </button>
-        <button on:click={() => changeFilter('top')} class="flex items-center gap-1 text-xs font-bold uppercase {currentFilter === 'top' ? 'text-indigo-600' : 'text-gray-400'}">
-            <Star size={16} /> Top
-        </button>
-        <button on:click={() => changeFilter('controversial')} class="flex items-center gap-1 text-xs font-bold uppercase {currentFilter === 'controversial' ? 'text-indigo-600' : 'text-gray-400'}">
-            <Flame size={16} /> Controversé
-        </button>
-    </div>
+            <form onsubmit={(e) => { e.preventDefault(); handleAuth(); }} class="space-y-4">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold uppercase text-gray-400 ml-1">Email</label>
+                    <input bind:value={email} type="email" required class="w-full p-3 rounded-xl border dark:bg-zinc-950 dark:border-zinc-800 dark:text-white outline-none focus:ring-2 ring-indigo-500/20" />
+                </div>
+                
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold uppercase text-gray-400 ml-1">Mot de passe</label>
+                    <input bind:value={password} type="password" required class="w-full p-3 rounded-xl border dark:bg-zinc-950 dark:border-zinc-800 dark:text-white outline-none focus:ring-2 ring-indigo-500/20" />
+                </div>
 
-    <div class="space-y-4 px-2">
-        {#each posts as post}
-            <PostCard 
-                user={post.username} 
-                content={post.content} 
-                upvotes={post.upvotes - post.downvotes}
-            />
-        {:else}
-            <p class="text-center text-gray-500 py-10">Aucun post trouvé. Lance le seed !</p>
-        {/each}
-    </div>
+                {#if error}
+                    <p class="text-red-500 text-xs font-bold text-center bg-red-50 dark:bg-red-900/20 py-3 rounded-xl border border-red-100 dark:border-red-900/50">{error}</p>
+                {/if}
+                
+                <button type="submit" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
+                    {#if isLogin}<LogIn size={20} /> Se connecter{:else}<UserPlus size={20} /> Créer mon compte{/if}
+                </button>
+
+                <button 
+                    type="button"
+                    onclick={() => { isLogin = !isLogin; error = ''; }} 
+                    class="w-full text-center text-xs text-gray-400 font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors mt-6"
+                >
+                    {isLogin ? "Pas de compte ? S'inscrire" : "Déjà membre ? Se connecter"}
+                </button>
+            </form>
+        </div>
+    {/if}
 </div>
+
+<style>
+    :global(html:not(.dark)) .post-card-bg { background-color: #ffffff !important; }
+    :global(html.dark) .post-card-bg { background-color: #171717 !important; }
+</style>
